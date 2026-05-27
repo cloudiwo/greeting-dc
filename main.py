@@ -25,6 +25,12 @@ bot = commands.Bot(
 voice_client = None
 
 # =========================
+# Queue system
+# =========================
+
+tts_queue = asyncio.Queue()
+
+# =========================
 # Random voice
 # =========================
 
@@ -40,10 +46,10 @@ voices = [
 welcome_messages = [
     "Halo {name}, selamat datang",
     "Yo {name}, akhirnya join juga",
-    "Welcome {name}",
-    "Hai {name}, semoga betah ya",
+    "Selamat datang {name}",
+    "Hai {name}, dari mana aja ",
     "Mantap {name} baru masuk voice",
-    "Halo bang {name}",
+    "Halo guys {name} basru masuk nih",
     "Waduh ada {name} nih",
     "{name} telah datang",
     "Selamat datang kembali {name}",
@@ -51,24 +57,32 @@ welcome_messages = [
 ]
 
 # =========================
-# Bot ready
+# Ensure voice connection
 # =========================
 
-@bot.event
-async def on_ready():
+async def ensure_voice():
+
     global voice_client
 
-    print(f"Login sebagai {bot.user}")
-
-    channel = bot.get_channel(VOICE_CHANNEL_ID)
+    channel = bot.get_channel(
+        VOICE_CHANNEL_ID
+    )
 
     if channel is None:
-        print("Voice channel tidak ditemukan")
         return
 
-    voice_client = await channel.connect()
+    if voice_client is None or not voice_client.is_connected():
 
-    print("Bot masuk voice channel")
+        try:
+            voice_client = await channel.connect(
+                reconnect=True,
+                timeout=60
+            )
+
+            print("Bot masuk voice channel")
+
+        except Exception as e:
+            print("Voice error:", e)
 
 # =========================
 # Speak function
@@ -77,6 +91,8 @@ async def on_ready():
 async def speak(text):
 
     global voice_client
+
+    await ensure_voice()
 
     if voice_client is None:
         return
@@ -89,10 +105,10 @@ async def speak(text):
     if os.path.exists("voice.mp3"):
         os.remove("voice.mp3")
 
-    # pilih voice random
-    selected_voice = random.choice(voices)
+    selected_voice = random.choice(
+        voices
+    )
 
-    # generate TTS
     communicate = edge_tts.Communicate(
         text=text,
         voice=selected_voice,
@@ -102,17 +118,61 @@ async def speak(text):
 
     await communicate.save("voice.mp3")
 
-    # play audio
     voice_client.play(
         discord.FFmpegPCMAudio("voice.mp3")
     )
 
 # =========================
-# Detect user join VC
+# Queue worker
+# =========================
+
+async def tts_worker():
+
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+
+        text = await tts_queue.get()
+
+        try:
+
+            # delay sebelum ngomong
+            delay = random.randint(2, 5)
+
+            print(f"Delay {delay} detik")
+
+            await asyncio.sleep(delay)
+
+            await speak(text)
+
+        except Exception as e:
+            print("TTS Error:", e)
+
+        tts_queue.task_done()
+
+# =========================
+# Bot ready
 # =========================
 
 @bot.event
-async def on_voice_state_update(member, before, after):
+async def on_ready():
+
+    print(f"Login sebagai {bot.user}")
+
+    bot.loop.create_task(
+        tts_worker()
+    )
+
+# =========================
+# Detect join VC
+# =========================
+
+@bot.event
+async def on_voice_state_update(
+    member,
+    before,
+    after
+):
 
     if member.bot:
         return
@@ -126,9 +186,9 @@ async def on_voice_state_update(member, before, after):
             name=member.display_name
         )
 
-        print(f"Memutar suara: {text}")
+        print(f"Queue suara: {text}")
 
-        await speak(text)
+        await tts_queue.put(text)
 
 # =========================
 # Run bot
