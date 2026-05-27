@@ -3,12 +3,9 @@ from discord.ext import commands
 
 import asyncio
 import edge_tts
-import yt_dlp
 import random
 import os
-
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
+import wavelink
 
 # =====================================
 # CONFIG
@@ -17,20 +14,6 @@ from spotipy.oauth2 import SpotifyClientCredentials
 TOKEN = "TOKEN_DISCORD"
 
 VOICE_CHANNEL_ID = 123456789
-
-SPOTIFY_CLIENT_ID = "CLIENT_ID"
-SPOTIFY_CLIENT_SECRET = "CLIENT_SECRET"
-
-# =====================================
-# SPOTIFY
-# =====================================
-
-sp = spotipy.Spotify(
-    auth_manager=SpotifyClientCredentials(
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET
-    )
-)
 
 # =====================================
 # DISCORD SETUP
@@ -46,10 +29,15 @@ bot = commands.Bot(
     intents=intents
 )
 
-voice_client = None
+# =====================================
+# LAVALINK CONFIG
+# =====================================
+
+LAVALINK_HOST = "http://lava-v4.ajieblogs.eu.org:80"
+LAVALINK_PASSWORD = "https://dsc.gg/ajidevserver"
 
 # =====================================
-# MUSIC QUEUE
+# PLAYER
 # =====================================
 
 music_queue = []
@@ -57,23 +45,15 @@ music_queue = []
 is_playing = False
 
 # =====================================
-# TTS QUEUE
+# TTS
 # =====================================
 
 tts_queue = asyncio.Queue()
-
-# =====================================
-# RANDOM VOICES
-# =====================================
 
 voices = [
     "id-ID-ArdiNeural",
     "id-ID-GadisNeural"
 ]
-
-# =====================================
-# RANDOM WELCOME MESSAGE
-# =====================================
 
 welcome_messages = [
     "Halo {name}, selamat datang",
@@ -89,33 +69,27 @@ welcome_messages = [
 ]
 
 # =====================================
-# ENSURE VOICE
+# GET PLAYER
 # =====================================
 
-async def ensure_voice():
-
-    global voice_client
+async def get_player():
 
     channel = bot.get_channel(
         VOICE_CHANNEL_ID
     )
 
     if channel is None:
-        return
+        return None
 
-    if voice_client is None or not voice_client.is_connected():
+    player = channel.guild.voice_client
 
-        try:
+    if not player:
 
-            voice_client = await channel.connect(
-                reconnect=True,
-                timeout=60
-            )
+        player = await channel.connect(
+            cls=wavelink.Player
+        )
 
-            print("Bot masuk voice")
-
-        except Exception as e:
-            print(e)
+    return player
 
 # =====================================
 # TTS SPEAK
@@ -123,14 +97,12 @@ async def ensure_voice():
 
 async def speak(text):
 
-    global voice_client
+    player = await get_player()
 
-    await ensure_voice()
-
-    if voice_client is None:
+    if player is None:
         return
 
-    while voice_client.is_playing():
+    while player.playing:
         await asyncio.sleep(1)
 
     if os.path.exists("voice.mp3"):
@@ -147,8 +119,12 @@ async def speak(text):
 
     await communicate.save("voice.mp3")
 
-    voice_client.play(
-        discord.FFmpegPCMAudio("voice.mp3")
+    source = discord.FFmpegPCMAudio(
+        "voice.mp3"
+    )
+
+    player.guild.voice_client.play(
+        source
     )
 
 # =====================================
@@ -177,31 +153,10 @@ async def tts_worker():
         tts_queue.task_done()
 
 # =====================================
-# YOUTUBE AUDIO
+# PLAY NEXT
 # =====================================
 
-async def get_audio_source(url):
-
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "quiet": True,
-        "noplaylist": True
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-
-        info = ydl.extract_info(
-            url,
-            download=False
-        )
-
-        return info["url"], info.get("title")
-
-# =====================================
-# PLAY NEXT SONG
-# =====================================
-
-async def play_next():
+async def play_next(player):
 
     global is_playing
 
@@ -212,65 +167,20 @@ async def play_next():
 
     is_playing = True
 
-    url = music_queue.pop(0)
+    query = music_queue.pop(0)
 
-    stream_url, title = await get_audio_source(url)
-
-    ffmpeg_options = {
-        "before_options":
-            "-reconnect 1 "
-            "-reconnect_streamed 1 "
-            "-reconnect_delay_max 5",
-        "options": "-vn"
-    }
-
-    source = discord.FFmpegPCMAudio(
-        stream_url,
-        **ffmpeg_options
+    tracks = await wavelink.Playable.search(
+        query
     )
 
-    def after_play(error):
+    if not tracks:
+        return
 
-        asyncio.run_coroutine_threadsafe(
-            play_next(),
-            bot.loop
-        )
+    track = tracks[0]
 
-    voice_client.play(
-        source,
-        after=after_play
-    )
+    await player.play(track)
 
-    print(f"Now playing: {title}")
-
-# =====================================
-# SPOTIFY LINK SUPPORT
-# =====================================
-
-async def spotify_to_youtube(url):
-
-    track = sp.track(url)
-
-    name = track["name"]
-
-    artist = track["artists"][0]["name"]
-
-    query = f"{name} {artist} audio"
-
-    ydl_opts = {
-        "quiet": True,
-        "default_search": "ytsearch",
-        "noplaylist": True
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-
-        info = ydl.extract_info(
-            query,
-            download=False
-        )
-
-        return info["entries"][0]["webpage_url"]
+    print(f"Now playing: {track.title}")
 
 # =====================================
 # BOT READY
@@ -281,14 +191,39 @@ async def on_ready():
 
     print(f"Login sebagai {bot.user}")
 
-    await ensure_voice()
+    node = wavelink.Node(
+        uri=LAVALINK_HOST,
+        password=LAVALINK_PASSWORD
+    )
+
+    await wavelink.Pool.connect(
+        client=bot,
+        nodes=[node]
+    )
+
+    print("Lavalink connected")
+
+    await get_player()
 
     bot.loop.create_task(
         tts_worker()
     )
 
 # =====================================
-# JOIN VC DETECT
+# TRACK END
+# =====================================
+
+@bot.event
+async def on_wavelink_track_end(
+    payload
+):
+
+    player = payload.player
+
+    await play_next(player)
+
+# =====================================
+# JOIN DETECT
 # =====================================
 
 @bot.event
@@ -316,41 +251,47 @@ async def on_voice_state_update(
 # =====================================
 
 @bot.command()
-async def play(ctx, url):
+async def play(ctx, *, query):
 
     global is_playing
 
-    await ensure_voice()
+    player = await get_player()
 
-    if "spotify.com" in url:
-        url = await spotify_to_youtube(url)
+    if player is None:
 
-    music_queue.append(url)
+        return await ctx.send(
+            "Voice channel tidak ditemukan"
+        )
+
+    music_queue.append(query)
 
     await ctx.send(
-        "Lagu masuk queue"
+        f"Masuk queue: {query}"
     )
 
-    if not is_playing:
-        await play_next()
+    if not player.playing and not is_playing:
+
+        await play_next(player)
 
 # =====================================
-# SKIP COMMAND
+# SKIP
 # =====================================
 
 @bot.command()
 async def skip(ctx):
 
-    if voice_client and voice_client.is_playing():
+    player = ctx.guild.voice_client
 
-        voice_client.stop()
+    if player and player.playing:
+
+        await player.skip()
 
         await ctx.send(
             "Skip lagu"
         )
 
 # =====================================
-# STOP COMMAND
+# STOP
 # =====================================
 
 @bot.command()
@@ -359,19 +300,22 @@ async def stop(ctx):
     global music_queue
     global is_playing
 
+    player = ctx.guild.voice_client
+
     music_queue.clear()
 
     is_playing = False
 
-    if voice_client:
-        voice_client.stop()
+    if player:
+
+        await player.stop()
 
     await ctx.send(
         "Music stopped"
     )
 
 # =====================================
-# QUEUE COMMAND
+# QUEUE
 # =====================================
 
 @bot.command()
@@ -379,11 +323,9 @@ async def queue(ctx):
 
     if len(music_queue) == 0:
 
-        await ctx.send(
+        return await ctx.send(
             "Queue kosong"
         )
-
-        return
 
     text = "\n".join(
         [
@@ -397,26 +339,24 @@ async def queue(ctx):
     )
 
 # =====================================
-# LEAVE COMMAND
+# LEAVE
 # =====================================
 
 @bot.command()
 async def leave(ctx):
 
-    global voice_client
+    player = ctx.guild.voice_client
 
-    if voice_client:
+    if player:
 
-        await voice_client.disconnect()
-
-        voice_client = None
+        await player.disconnect()
 
     await ctx.send(
         "Bot keluar VC"
     )
 
 # =====================================
-# RUN BOT
+# RUN
 # =====================================
 
 bot.run(TOKEN)
