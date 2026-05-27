@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 
 import asyncio
 import edge_tts
@@ -43,7 +42,7 @@ intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(
-    command_prefix="!",
+    command_prefix="?",
     intents=intents
 )
 
@@ -231,6 +230,7 @@ async def play_next():
     )
 
     def after_play(error):
+
         asyncio.run_coroutine_threadsafe(
             play_next(),
             bot.loop
@@ -287,15 +287,6 @@ async def on_ready():
         tts_worker()
     )
 
-    try:
-
-        synced = await bot.tree.sync()
-
-        print(f"Slash synced: {len(synced)}")
-
-    except Exception as e:
-        print(e)
-
 # =====================================
 # JOIN VC DETECT
 # =====================================
@@ -321,21 +312,13 @@ async def on_voice_state_update(
         await tts_queue.put(text)
 
 # =====================================
-# /PLAY
+# PLAY COMMAND
 # =====================================
 
-@bot.tree.command(
-    name="play",
-    description="Play music"
-)
-async def play(
-    interaction: discord.Interaction,
-    url: str
-):
+@bot.command()
+async def play(ctx, url):
 
     global is_playing
-
-    await interaction.response.defer()
 
     await ensure_voice()
 
@@ -344,7 +327,7 @@ async def play(
 
     music_queue.append(url)
 
-    await interaction.followup.send(
+    await ctx.send(
         "Lagu masuk queue"
     )
 
@@ -352,36 +335,26 @@ async def play(
         await play_next()
 
 # =====================================
-# /SKIP
+# SKIP COMMAND
 # =====================================
 
-@bot.tree.command(
-    name="skip",
-    description="Skip song"
-)
-async def skip(
-    interaction: discord.Interaction
-):
+@bot.command()
+async def skip(ctx):
 
     if voice_client and voice_client.is_playing():
 
         voice_client.stop()
 
-        await interaction.response.send_message(
+        await ctx.send(
             "Skip lagu"
         )
 
 # =====================================
-# /STOP
+# STOP COMMAND
 # =====================================
 
-@bot.tree.command(
-    name="stop",
-    description="Stop music"
-)
-async def stop(
-    interaction: discord.Interaction
-):
+@bot.command()
+async def stop(ctx):
 
     global music_queue
     global is_playing
@@ -393,25 +366,20 @@ async def stop(
     if voice_client:
         voice_client.stop()
 
-    await interaction.response.send_message(
+    await ctx.send(
         "Music stopped"
     )
 
 # =====================================
-# /QUEUE
+# QUEUE COMMAND
 # =====================================
 
-@bot.tree.command(
-    name="queue",
-    description="Show queue"
-)
-async def queue(
-    interaction: discord.Interaction
-):
+@bot.command()
+async def queue(ctx):
 
     if len(music_queue) == 0:
 
-        await interaction.response.send_message(
+        await ctx.send(
             "Queue kosong"
         )
 
@@ -424,21 +392,16 @@ async def queue(
         ]
     )
 
-    await interaction.response.send_message(
+    await ctx.send(
         f"Queue:\n{text}"
     )
 
 # =====================================
-# /LEAVE
+# LEAVE COMMAND
 # =====================================
 
-@bot.tree.command(
-    name="leave",
-    description="Disconnect bot"
-)
-async def leave(
-    interaction: discord.Interaction
-):
+@bot.command()
+async def leave(ctx):
 
     global voice_client
 
@@ -448,7 +411,7 @@ async def leave(
 
         voice_client = None
 
-    await interaction.response.send_message(
+    await ctx.send(
         "Bot keluar VC"
     )
 
