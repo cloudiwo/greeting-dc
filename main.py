@@ -1,16 +1,11 @@
-from elevenlabs.client import ElevenLabs
+import edge_tts
 import discord
 from discord.ext import commands
 import asyncio
 
-TOKEN = "TOKEN_DISCORD"
-ELEVEN_API = "API_KEY_ELEVEN"
+TOKEN = ""
 
-VOICE_CHANNEL_ID = 123456789
-
-client = ElevenLabs(
-    api_key=ELEVEN_API
-)
+VOICE_CHANNEL_ID = 1493993071728267301
 
 intents = discord.Intents.default()
 intents.voice_states = True
@@ -32,12 +27,20 @@ async def on_ready():
 
 async def speak(text):
 
-    audio = client.text_to_speech.convert(
+    communicate = edge_tts.Communicate(
         text=text,
-        voice_id="21m00Tcm4TlvDq8ikWAM",
-        model_id="eleven_multilingual_v2"
+        voice="id-ID-ArdiNeural"
     )
 
+    await communicate.save("voice.mp3")
+
+    while voice_client.is_playing():
+        await asyncio.sleep(1)
+
+    voice_client.play(
+        discord.FFmpegPCMAudio("voice.mp3")
+    )
+    
     with open("voice.mp3", "wb") as f:
         for chunk in audio:
             f.write(chunk)
