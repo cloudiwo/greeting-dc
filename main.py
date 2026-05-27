@@ -1,65 +1,68 @@
 import discord
-    await interaction.response.send_message(
-        "Music stopped"
+from discord.ext import commands
+from discord import app_commands
+
+import asyncio
+import edge_tts
+import yt_dlp
+import random
+import os
+
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+
+# =====================================
+# CONFIG
+# =====================================
+
+TOKEN = "TOKEN_DISCORD"
+
+VOICE_CHANNEL_ID = 123456789
+
+SPOTIFY_CLIENT_ID = "CLIENT_ID"
+SPOTIFY_CLIENT_SECRET = "CLIENT_SECRET"
+
+# =====================================
+# SPOTIFY
+# =====================================
+
+sp = spotipy.Spotify(
+    auth_manager=SpotifyClientCredentials(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET
     )
-
-# =====================================
-# /QUEUE
-# =====================================
-
-@bot.tree.command(
-    name="queue",
-    description="Show queue"
 )
-async def queue(
-    interaction: discord.Interaction
-):
-
-    if len(music_queue) == 0:
-
-        await interaction.response.send_message(
-            "Queue kosong"
-        )
-
-        return
-
-    text = "\n".join(
-        [
-            f"{i+1}. {song}"
-            for i, song in enumerate(music_queue)
-        ]
-    )
-
-    await interaction.response.send_message(
-        f"Queue:\n{text}"
-    )
 
 # =====================================
-# /LEAVE
+# DISCORD SETUP
 # =====================================
 
-@bot.tree.command(
-    name="leave",
-    description="Disconnect bot"
+intents = discord.Intents.default()
+intents.voice_states = True
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
 )
-async def leave(
-    interaction: discord.Interaction
-):
 
-    global voice_client
-
-    if voice_client:
-
-        await voice_client.disconnect()
-
-        voice_client = None
-
-    await interaction.response.send_message(
-        "Bot keluar VC"
-    )
+voice_client = None
 
 # =====================================
-# RUN BOT
+# MUSIC QUEUE
 # =====================================
 
+music_queue = []
+
+is_playing = False
+
+# =====================================
+# TTS QUEUE
+# =====================================
+
+tts_queue = asyncio.Queue()
+
+# =====================================
+# RANDOM VOICES
 bot.run(TOKEN)
