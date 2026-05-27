@@ -1,4 +1,5 @@
 import edge_tts
+import os
 import discord
 from discord.ext import commands
 import asyncio
@@ -25,25 +26,21 @@ async def on_ready():
 
     print("Bot online")
 
+import edge_tts
+import os
+
 async def speak(text):
+
+    if os.path.exists("voice.mp3"):
+        os.remove("voice.mp3")
 
     communicate = edge_tts.Communicate(
         text=text,
-        voice="id-ID-ArdiNeural"
+        voice="id-ID-ArdiNeural",
+        rate="+10%"
     )
 
     await communicate.save("voice.mp3")
-
-    while voice_client.is_playing():
-        await asyncio.sleep(1)
-
-    voice_client.play(
-        discord.FFmpegPCMAudio("voice.mp3")
-    )
-    
-    with open("voice.mp3", "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
 
     while voice_client.is_playing():
         await asyncio.sleep(1)
